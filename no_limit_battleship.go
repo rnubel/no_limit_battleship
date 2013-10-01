@@ -6,6 +6,7 @@ import (
   "fmt"
   "strings"
   "strconv"
+  "time"
 )
 
 type Action struct {
@@ -70,7 +71,8 @@ func NoLimitBattleship() {
   input, confirmation := manageBoard(board)
 
   http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-    fmt.Println("Handling request [%s]", req.URL.String())
+    t0 := time.Now()
+    fmt.Printf("Handling request [%s]\n", req.URL.String())
     req.ParseForm()
     if req.Form.Get("x") != "" {
       x, _ := strconv.Atoi(req.Form.Get("x"))
@@ -95,11 +97,11 @@ func NoLimitBattleship() {
       }
 
       input <- a
-      result := <-confirmation
-      fmt.Println(result)
+      <-confirmation
     }
 
     fmt.Fprintf(w, "Board:\n%s", printBoard(board))
+    fmt.Printf("Request took %fms to serve.\n", float64(time.Since(t0).Nanoseconds()) / 1e6)
   })
   http.ListenAndServe(":8080", nil)
 }
