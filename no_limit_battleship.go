@@ -1,107 +1,95 @@
 package no_limit_battleship
 
 import (
-  "battleship"
-  "net/http"
-  "fmt"
-  "strings"
-  "strconv"
-  "time"
+	"battleship"
+	"encoding/json"
+	"fmt"
+	"github.com/gorilla/mux"
+	"net/http"
+	"strings"
+	"time"
 )
 
 type Action struct {
-  actionType    string
-  x             int
-  y             int
-  size          int
-  horizontal    bool
+	actionType string
+	x          int
+	y          int
+	size       int
+	horizontal bool
 }
 
 func printBoard(b *battleship.Board) (output string) {
-  for y := 0; y < b.Height; y++ {
-    cells := []string{}
-    for x := 0; x < b.Width; x++ {
-      var val string;
+	for y := 0; y < b.Height; y++ {
+		cells := []string{}
+		for x := 0; x < b.Width; x++ {
+			var val string
 
-      if b.HitAt(x, y) {
-        val = "[X]"
-      } else if b.MissAt(x, y) {
-        val = " O "
-      } else if b.ShipAt(x, y) {
-        val = "[ ]"
-      } else {
-        val = " . "
-      }
+			if b.HitAt(x, y) {
+				val = "[X]"
+			} else if b.MissAt(x, y) {
+				val = " O "
+			} else if b.ShipAt(x, y) {
+				val = "[ ]"
+			} else {
+				val = " . "
+			}
 
-      cells = append(cells, val)
-    }
+			cells = append(cells, val)
+		}
 
-    output += strings.Join(cells, "") + "\n"
-  }
-  return
+		output += strings.Join(cells, "") + "\n"
+	}
+	return
 }
 
-func initializeBoard() *battleship.Board {
-  board := battleship.Board{Width: 10, Height: 10}
-  return &board
+// decorator that times and logs the request
+type BaseRequestHandler struct {
+	router *mux.Router
 }
 
-func manageBoard(board *battleship.Board) (chan Action, chan bool) {
-  actionChannel := make(chan Action)
-  confChannel := make(chan bool)
+func (h BaseRequestHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	t0 := time.Now()
+	fmt.Printf("Handling request [%s]\n", req.URL.String())
+	req.ParseForm()
 
-  go func() { // Do this all in parallel.
-    for a := range(actionChannel) {
-      if a.actionType == "shoot" {
-        board.RecordShot(a.x, a.y)
-      } else if a.actionType == "place" {
-        board.PlaceShip(a.x, a.y, a.size, a.horizontal)
-      }
-      confChannel <- true
-    }
-  }()
+	w.Header().Set("Content-Type", "application/json")
 
-  return actionChannel, confChannel;
+	h.router.ServeHTTP(w, req)
+
+	fmt.Printf("Request took %fms to serve.\n", float64(time.Since(t0).Nanoseconds())/1e6)
+}
+
+func rootHandler(w http.ResponseWriter, req *http.Request) {
+	fmt.Fprintf(w, "{\"status\": \"ok\"}")
+}
+
+func createGameHandler(w http.ResponseWriter, req *http.Request) {
+	p1, p2 := battleship.Player{Identifier: req.FormValue("player1")},
+		battleship.Player{Identifier: req.FormValue("player2")}
+
+	game := battleship.CreateGame(10, 10, p1, p2)
+
+	json, err := json.Marshal(gameStatus(&game))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("{\"error\": \"%s\"}", err), 500)
+	}
+
+	fmt.Fprintf(w, "%s", json)
 }
 
 func NoLimitBattleship() {
-  fmt.Println("Starting up the server...")
+	fmt.Println("Starting up the server...")
 
-  board := initializeBoard()
-  input, confirmation := manageBoard(board)
+	//  board := initializeBoard()
+	//  input, confirmation := manageBoard(board)
 
-  http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-    t0 := time.Now()
-    fmt.Printf("Handling request [%s]\n", req.URL.String())
-    req.ParseForm()
-    if req.Form.Get("x") != "" {
-      x, _ := strconv.Atoi(req.Form.Get("x"))
-      y, _ := strconv.Atoi(req.Form.Get("y"))
-      a := Action{x: x, y: y}
+	r := mux.NewRouter()
+	r.HandleFunc("/", rootHandler)
+	r.HandleFunc("/game", createGameHandler).Methods("POST")
 
-      if req.Form.Get("action") == "shoot" {
-        a.actionType = "shoot"
-      } else if req.Form.Get("action") == "place" {
-        a.actionType = "place"
-        size, err1 := strconv.Atoi(req.Form.Get("size"))
-        horizontal, err2 := strconv.ParseBool(req.Form.Get("horizontal"))
+	// we want all requests to be logged and timed
+	bh := BaseRequestHandler{router: r}
+	http.Handle("/", bh)
 
-        if err1 != nil || err2 != nil {
-          fmt.Println("INVALID REQUEST")
-          fmt.Fprintf(w, "Invalid request!")
-          return;
-        } else {
-          a.size = size
-          a.horizontal = horizontal
-        }
-      }
-
-      input <- a
-      <-confirmation
-    }
-
-    fmt.Fprintf(w, "Board:\n%s", printBoard(board))
-    fmt.Printf("Request took %fms to serve.\n", float64(time.Since(t0).Nanoseconds()) / 1e6)
-  })
-  http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8080", nil)
 }
