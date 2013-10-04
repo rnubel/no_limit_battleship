@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-
 func printBoard(b *battleship.Board) (output string) {
 	for y := 0; y < b.Height; y++ {
 		cells := []string{}
@@ -37,7 +36,7 @@ func printBoard(b *battleship.Board) (output string) {
 
 // stores the state of the server in a shared construct.
 type ServerState struct {
-  tm  *TournamentManager
+	tm *TournamentManager
 }
 
 // decorator that times and logs the request
@@ -60,17 +59,16 @@ func (h BaseRequestHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) 
 func renderJSON(w http.ResponseWriter, json []byte, err error) {
 	if err != nil {
 		http.Error(w, fmt.Sprintf("{\"error\": \"%s\"}", err), 500)
-    return
+		return
 	}
 
 	fmt.Fprintf(w, "%s", json)
 }
 
 func renderErrorJSON(w http.ResponseWriter, err string, status int) {
-  http.Error(w, fmt.Sprintf("{\"error\": \"%s\"}", err), status)
-  fmt.Printf("Returned error: %s\n", err)
+	http.Error(w, fmt.Sprintf("{\"error\": \"%s\"}", err), status)
+	fmt.Printf("Returned error: %s\n", err)
 }
-
 
 // root page, doesn't do much
 func rootHandler(w http.ResponseWriter, req *http.Request) {
@@ -81,83 +79,82 @@ func rootHandler(w http.ResponseWriter, req *http.Request) {
 func createGameHandler(w http.ResponseWriter, req *http.Request, ss *ServerState) {
 	gameRunner, gameErr := ss.tm.CreateGame(req.FormValue("player1"), req.FormValue("player2"))
 
-  if gameErr != "" {
-    renderErrorJSON(w, gameErr, 422)
-    return
-  }
+	if gameErr != "" {
+		renderErrorJSON(w, gameErr, 422)
+		return
+	}
 
 	json, err := json.Marshal(gameStatus(gameRunner))
-  renderJSON(w, json, err)
+	renderJSON(w, json, err)
 }
-
 
 // returns the game status
 func gameStatusHandler(w http.ResponseWriter, req *http.Request, ss *ServerState) {
-  // locate the requested game
-  vars := mux.Vars(req)
-  gameID := vars["gameID"]
+	// locate the requested game
+	vars := mux.Vars(req)
+	gameID := vars["gameID"]
 
-  gameRunner := ss.tm.LocateGame(gameID)
+	gameRunner := ss.tm.LocateGame(gameID)
 
-  if gameRunner == nil {
-    renderErrorJSON(w, "game_not_found", 404)
-    return
-  }
+	if gameRunner == nil {
+		renderErrorJSON(w, "game_not_found", 404)
+		return
+	}
 
-  json, err := json.Marshal(gameStatus(gameRunner))
-  renderJSON(w, json, err)
+	json, err := json.Marshal(gameStatus(gameRunner))
+	renderJSON(w, json, err)
 }
 
 // registers a new player, fetches a unique ID for them
 func registerPlayerHandler(w http.ResponseWriter, req *http.Request, ss *ServerState) {
-  name := req.FormValue("name")
-  player, regErr := ss.tm.RegisterPlayer(name)
+	name := req.FormValue("name")
+	player, regErr := ss.tm.RegisterPlayer(name)
 
-  if regErr != "" {
-    renderErrorJSON(w, regErr, 422)
-    return
-  }
+	if regErr != "" {
+		renderErrorJSON(w, regErr, 422)
+		return
+	}
 
-  json, err := json.Marshal(playerStatus(player))
-  renderJSON(w, json, err)
+	json, err := json.Marshal(playerStatus(player))
+	renderJSON(w, json, err)
 }
 
 // fetches a player's status from their key
 func playerStatusHandler(w http.ResponseWriter, req *http.Request, ss *ServerState) {
-  vars := mux.Vars(req)
-  playerKey := vars["playerKey"]
+	vars := mux.Vars(req)
+	playerKey := vars["playerKey"]
 
-  player := ss.tm.LocatePlayer(playerKey)
+	player := ss.tm.LocatePlayer(playerKey)
 
-  if player == nil {
-    http.Error(w, "{\"error\": \"invalid_player_key\"}", 422)
-    return
-  }
+	if player == nil {
+		http.Error(w, "{\"error\": \"invalid_player_key\"}", 422)
+		return
+	}
 
-  json, err := json.Marshal(playerStatus(player))
-  renderJSON(w, json, err)
+	json, err := json.Marshal(playerStatus(player))
+	renderJSON(w, json, err)
 }
 
 // main server routine
 func NoLimitBattleship() {
 	fmt.Println("Starting up the server...")
 
-  tm          := StartTournament()
-  serverState := &ServerState{tm: tm}
+	tm := StartTournament()
+	serverState := &ServerState{tm: tm}
 
-  // inject the server state
-  makeHandler := func(fn func(http.ResponseWriter, *http.Request, *ServerState)) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-      fn(w, r, serverState)
-    }
-  }
+	// inject the server state
+	makeHandler := func(fn func(http.ResponseWriter, *http.Request, *ServerState)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			fn(w, r, serverState)
+		}
+	}
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", rootHandler)
-  r.HandleFunc("/players",              makeHandler(registerPlayerHandler)).Methods("POST")
-  r.HandleFunc("/players/{playerKey}",  makeHandler(playerStatusHandler)).Methods("GET")
-	r.HandleFunc("/games",                makeHandler(createGameHandler)).Methods("POST")
-	r.HandleFunc("/games/{gameID}",       makeHandler(gameStatusHandler)).Methods("GET")
+	r.HandleFunc("/players", makeHandler(registerPlayerHandler)).Methods("POST")
+	r.HandleFunc("/players/{playerKey}", makeHandler(playerStatusHandler)).Methods("GET")
+	r.HandleFunc("/games", makeHandler(createGameHandler)).Methods("POST")
+	r.HandleFunc("/games/{gameID}", makeHandler(gameStatusHandler)).Methods("GET")
 
 	// we want all requests to be logged and timed
 	bh := BaseRequestHandler{router: r}
