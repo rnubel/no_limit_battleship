@@ -8,6 +8,10 @@ type PlayerStatus struct {
 	CurrentGameID string
 }
 
+type SalvoResult struct {
+  Hits  int
+}
+
 type GameStatus struct {
 	GameID  string
 	Player1 string

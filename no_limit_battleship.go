@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/mux"
 	"net/http"
 	"strings"
+  "strconv"
 	"time"
 )
 
@@ -88,6 +89,25 @@ func createGameHandler(w http.ResponseWriter, req *http.Request, ss *ServerState
 	renderJSON(w, json, err)
 }
 
+// starts a new game. should be authenticated against some admin key, maybe?
+func startGameHandler(w http.ResponseWriter, req *http.Request, ss *ServerState) {
+	// locate the requested game
+	vars := mux.Vars(req)
+	gameID := vars["gameID"]
+
+	gameRunner := ss.tm.LocateGame(gameID)
+
+	if gameRunner == nil {
+		renderErrorJSON(w, "game_not_found", 404)
+		return
+	}
+
+  gameRunner.start()
+
+	json, err := json.Marshal(gameStatus(gameRunner))
+	renderJSON(w, json, err)
+}
+
 // returns the game status
 func gameStatusHandler(w http.ResponseWriter, req *http.Request, ss *ServerState) {
 	// locate the requested game
@@ -103,6 +123,114 @@ func gameStatusHandler(w http.ResponseWriter, req *http.Request, ss *ServerState
 
 	json, err := json.Marshal(gameStatus(gameRunner))
 	renderJSON(w, json, err)
+}
+
+// submits a turn for a game
+func submitTurnHandler(w http.ResponseWriter, req *http.Request, ss *ServerState) {
+	// locate the requested game
+	vars := mux.Vars(req)
+	gameID := vars["gameID"]
+	playerID := req.FormValue("playerKey")
+
+	gameRunner := ss.tm.LocateGame(gameID)
+  player := ss.tm.LocatePlayer(playerID)
+
+	if gameRunner == nil {
+		renderErrorJSON(w, "game_not_found", 404)
+		return
+	}
+
+  if player == nil {
+    renderErrorJSON(w, "player_not_found", 404)
+    return
+  }
+
+  // parse the turn
+  turnType := req.FormValue("turnType")
+  switch turnType {
+  case "placement":
+    handlePlacementTurn(w, req, gameRunner, player)
+  case "salvo":
+    handleSalvoTurn(w, req, gameRunner, player)
+  default:
+    renderErrorJSON(w, "invalid_turn_type", 422)
+  }
+}
+
+func handleSalvoTurn(w http.ResponseWriter, req *http.Request, gameRunner *GameRunner, player *RegisteredPlayer) {
+  v := req.URL.Query()
+  coordinates := v["coords[]"] // ?coords[]=1,1&coords[]=2,2&coords[]=3,3
+
+  fmt.Println("  Coordinates: ", coordinates)
+
+  if len(coordinates) == 0 {
+    renderErrorJSON(w, "no_coordinates_given", 400)
+    return
+  }
+
+  coords := []battleship.Coord{}
+  for i := range(coordinates) {
+    parts := strings.Split(coordinates[i], ",")
+    x, err := strconv.Atoi(parts[0])
+
+    if err != nil {
+      renderErrorJSON(w, fmt.Sprintf("invalid_coordinate: %s", coordinates[i]), 400)
+      return
+    }
+
+    y, err := strconv.Atoi(parts[1])
+
+    if err != nil {
+      renderErrorJSON(w, fmt.Sprintf("invalid_coordinate: %s", coordinates[i]), 400)
+      return
+    }
+
+    coords = append(coords, battleship.NewCoord(x,y))
+  }
+
+  ok, turnErr, hits := gameRunner.Game.SubmitSalvoTurn(player.Key, coords)
+  if !ok {
+    renderErrorJSON(w, turnErr, 422)
+  } else {
+    json, err := json.Marshal(SalvoResult{Hits: hits})
+    renderJSON(w, json, err)
+  }
+}
+
+func handlePlacementTurn(w http.ResponseWriter, req *http.Request, gameRunner *GameRunner, player *RegisteredPlayer) {
+  _x, _y, _size, _horizontal := req.FormValue("x"), req.FormValue("y"), req.FormValue("size"), req.FormValue("horizontal")
+
+  x, err := strconv.Atoi(_x)
+  if err != nil {
+    renderErrorJSON(w, "missing_x_coordinate", 422)
+    return
+  }
+
+  y, err := strconv.Atoi(_y)
+  if err != nil {
+    renderErrorJSON(w, "missing_y_coordinate", 422)
+    return
+  }
+
+  size, err := strconv.Atoi(_size)
+  if err != nil {
+    renderErrorJSON(w, "missing_size", 422)
+    return
+  }
+
+  horizontal, err := strconv.ParseBool(_horizontal)
+  if err != nil {
+    renderErrorJSON(w, "missing_horizontal_flag", 422)
+    return
+  }
+
+  ok, turnErr := gameRunner.Game.SubmitPlacementTurn(player.Key, x, y, size, horizontal)
+  if !ok {
+    renderErrorJSON(w, turnErr, 422)
+  } else {
+    json, err := json.Marshal(gameStatus(gameRunner))
+    renderJSON(w, json, err)
+  }
 }
 
 // registers a new player, fetches a unique ID for them
@@ -155,6 +283,8 @@ func NoLimitBattleship() {
 	r.HandleFunc("/players/{playerKey}", makeHandler(playerStatusHandler)).Methods("GET")
 	r.HandleFunc("/games", makeHandler(createGameHandler)).Methods("POST")
 	r.HandleFunc("/games/{gameID}", makeHandler(gameStatusHandler)).Methods("GET")
+	r.HandleFunc("/games/{gameID}/start", makeHandler(startGameHandler)).Methods("POST")
+	r.HandleFunc("/games/{gameID}/turns", makeHandler(submitTurnHandler)).Methods("POST")
 
 	// we want all requests to be logged and timed
 	bh := BaseRequestHandler{router: r}

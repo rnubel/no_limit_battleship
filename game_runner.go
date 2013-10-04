@@ -3,7 +3,6 @@ package no_limit_battleship
 import (
 	"battleship"
 	"code.google.com/p/go-uuid/uuid"
-	"fmt"
 )
 
 type Turn struct {
@@ -29,17 +28,9 @@ type GameRunner struct {
 func createGameRunner(g *battleship.Game) *GameRunner {
 	gr := &GameRunner{Id: uuid.New(), Game: g}
 
-	go gr.run()
-
 	return gr
 }
 
-func (gr *GameRunner) run() {
-	select {
-	case turn := <-gr.TurnInput:
-		fmt.Println("Received turn: ", turn)
-
-		r := Result{ok: true}
-		gr.ResultOutput <- r
-	}
+func (gr *GameRunner) start() {
+  gr.Game.Start()
 }
