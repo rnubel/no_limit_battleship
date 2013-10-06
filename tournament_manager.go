@@ -35,7 +35,8 @@ func (tm *TournamentManager) CreateGame(p1Key, p2Key string) (runner *GameRunner
 		return nil, "player_2_already_in_game"
 	}
 
-	p1, p2 := battleship.Player{Identifier: p1Key}, battleship.Player{Identifier: p2Key}
+	p1, p2 := battleship.Player{Identifier: p1Key, Name: rp1.Name},
+              battleship.Player{Identifier: p2Key, Name: rp2.Name}
 	game := battleship.CreateGame(10, 10, p1, p2)
 	runner = createGameRunner(&game)
 

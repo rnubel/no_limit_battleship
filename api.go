@@ -13,20 +13,26 @@ type SalvoResult struct {
 }
 
 type GameStatus struct {
-	GameID  string
-	Player1 string
-	Player2 string
-	Phase   string
+	GameID        string
+	Player1       string
+	Player2       string
+	Phase         string
+  CurrentPlayer string
 }
 
 func gameStatus(gr *GameRunner) GameStatus {
 	g := gr.Game
-
-	return GameStatus{
+	gs := GameStatus{
+    Player1:  g.Player1.Name,
+    Player2:  g.Player2.Name,
 		GameID:  gr.Id,
-		Player1: g.Player1.Identifier,
-		Player2: g.Player2.Identifier,
 		Phase:   phaseName(g.Phase)}
+
+  if g.Phase == battleship.BATTLE {
+    gs.CurrentPlayer = g.CurrentPlayer.Name
+  }
+
+  return gs
 }
 
 func phaseName(phase battleship.GamePhase) string {
