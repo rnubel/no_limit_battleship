@@ -34,3 +34,7 @@ func createGameRunner(g *battleship.Game) *GameRunner {
 func (gr *GameRunner) start() {
   gr.Game.Start()
 }
+
+func (gr *GameRunner) WinnerIdentifier() string {
+  return gr.Game.Winner.Identifier
+}
